@@ -1,0 +1,59 @@
+name: edgecntrl-frr
+
+topology:
+  nodes:
+    edge-west:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      privileged: true
+      binds:
+        - configs/edge-west/daemons:/etc/frr/daemons
+        - configs/edge-west/frr.conf:/etc/frr/frr.conf
+        - configs/edge-west/vtysh.conf:/etc/frr/vtysh.conf
+
+    core-north:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      privileged: true
+      binds:
+        - configs/core-north/daemons:/etc/frr/daemons
+        - configs/core-north/frr.conf:/etc/frr/frr.conf
+        - configs/core-north/vtysh.conf:/etc/frr/vtysh.conf
+
+    core-south:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      privileged: true
+      binds:
+        - configs/core-south/daemons:/etc/frr/daemons
+        - configs/core-south/frr.conf:/etc/frr/frr.conf
+        - configs/core-south/vtysh.conf:/etc/frr/vtysh.conf
+
+    edge-east:
+      kind: linux
+      image: quay.io/frrouting/frr:10.2.1
+      privileged: true
+      binds:
+        - configs/edge-east/daemons:/etc/frr/daemons
+        - configs/edge-east/frr.conf:/etc/frr/frr.conf
+        - configs/edge-east/vtysh.conf:/etc/frr/vtysh.conf
+
+    tenant-west-host:
+      kind: linux
+      image: alpine:3.21
+      privileged: true
+      cmd: sleep infinity
+
+    tenant-east-host:
+      kind: linux
+      image: alpine:3.21
+      privileged: true
+      cmd: sleep infinity
+
+  links:
+    - endpoints: ["edge-west:eth1", "core-north:eth1"]
+    - endpoints: ["core-north:eth2", "edge-east:eth1"]
+    - endpoints: ["edge-west:eth2", "core-south:eth1"]
+    - endpoints: ["core-south:eth2", "edge-east:eth2"]
+    - endpoints: ["edge-west:eth3", "tenant-west-host:eth1"]
+    - endpoints: ["edge-east:eth3", "tenant-east-host:eth1"]

@@ -1,0 +1,10 @@
+/build/
+/lab/containerlab/clab-edgecntrl-frr/
+/lab/containerlab/.tls/
+/out/
+*.log
+*.csv
+.vs/
+.idea/
+*.user
+*.suo
