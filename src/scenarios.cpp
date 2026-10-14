@@ -24,18 +24,18 @@ Network makeSampleNetwork() {
     network.addLink("edge-west", "core-south", 5.0);
     network.addLink("core-south", "edge-east", 1.0);
 
-    network.addVpcSubnet("tenant-acme", 5001U, Ipv4Prefix::parse("10.10.0.0/24"),
+    network.addVpcSubnet("client-a", 5001U, Ipv4Prefix::parse("10.10.0.0/24"),
                          "edge-west");
-    network.addVpcSubnet("tenant-acme", 5001U, Ipv4Prefix::parse("10.20.0.0/24"),
+    network.addVpcSubnet("client-a", 5001U, Ipv4Prefix::parse("10.20.0.0/24"),
                          "edge-east");
-    network.addVpcSubnet("tenant-other", 6001U, Ipv4Prefix::parse("10.20.0.0/24"),
+    network.addVpcSubnet("client-b", 6001U, Ipv4Prefix::parse("10.20.0.0/24"),
                          "edge-east");
     return network;
 }
 
 void printResult(std::ostream& output, const ForwardingResult& result) {
     output << (result.delivered ? "[DELIVERED] " : "[DROPPED]   ")
-           << result.tenant_id << " -> " << result.destination << " | VNI " << result.vni
+           << result.client_id << " -> " << result.destination << " | VNI " << result.vni
            << " | path: ";
     if (result.traversed_routers.empty()) {
         output << "(none)";
@@ -57,7 +57,7 @@ void printMetrics(std::ostream& output, const Network& network) {
 
 void printSrv6Result(std::ostream& output, const Srv6ForwardingResult& result) {
     output << (result.delivered ? "[DELIVERED] " : "[DROPPED]   ")
-           << result.tenant_id << " -> " << result.destination << " | path: ";
+           << result.client_id << " -> " << result.destination << " | path: ";
     if (result.traversed_routers.empty()) {
         output << "(none)";
     } else {
@@ -91,31 +91,31 @@ void runFailoverScenario(std::ostream& output) {
     Network network = makeSampleNetwork();
 
     const auto before =
-        network.forward("edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42"));
+        network.forward("edge-west", "client-a", Ipv4Address::parse("10.20.0.42"));
     output << "Before failure:\n";
     printResult(output, before);
 
     output << "\nInjecting failure: edge-west -- core-north goes DOWN.\n";
     network.setLinkState("edge-west", "core-north", false);
     const auto after =
-        network.forward("edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42"));
+        network.forward("edge-west", "client-a", Ipv4Address::parse("10.20.0.42"));
     output << "After routing convergence:\n";
     printResult(output, after);
     printMetrics(output, network);
 }
 
 void runIsolationScenario(std::ostream& output) {
-    output << "=== Scenario: VPC/tenant isolation and VXLAN VNI ===\n";
+    output << "=== Scenario: VPC/client isolation and VXLAN VNI ===\n";
     Network network = makeSampleNetwork();
 
     const auto permitted =
-        network.forward("edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42"));
-    output << "Packet in tenant-acme VRF:\n";
+        network.forward("edge-west", "client-a", Ipv4Address::parse("10.20.0.42"));
+    output << "Packet in client-a VRF:\n";
     printResult(output, permitted);
 
     const auto isolated =
-        network.forward("edge-west", "tenant-unknown", Ipv4Address::parse("10.20.0.42"));
-    output << "Same destination, unknown tenant (must not leak across VPCs):\n";
+        network.forward("edge-west", "unknown-client", Ipv4Address::parse("10.20.0.42"));
+    output << "Same destination, unknown client (must not leak across VPCs):\n";
     printResult(output, isolated);
     printMetrics(output, network);
 }
@@ -131,7 +131,7 @@ void runSrv6Scenario(std::ostream& output) {
     output << "Policy: 2001:db8:1::1 (End, core-north) -> "
               "2001:db8:1::4 (End.DX4, edge-east)\n";
     const auto first = simulateSrv6Forwarding(
-        network, "edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42"), north_policy);
+        network, "edge-west", "client-a", Ipv4Address::parse("10.20.0.42"), north_policy);
     output << "Before failure:\n";
     printSrv6Result(output, first);
 
@@ -139,7 +139,7 @@ void runSrv6Scenario(std::ostream& output) {
     network.setLinkState("edge-west", "core-north", false);
     network.setLinkState("core-north", "edge-east", false);
     const auto broken = simulateSrv6Forwarding(
-        network, "edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42"), north_policy);
+        network, "edge-west", "client-a", Ipv4Address::parse("10.20.0.42"), north_policy);
     output << "The old segment list cannot reach its north SID:\n";
     printSrv6Result(output, broken);
 
@@ -148,7 +148,7 @@ void runSrv6Scenario(std::ostream& output) {
         {Ipv6Address::parse("2001:db8:1::4"), "edge-east", Srv6Behavior::EndDx4}};
     output << "\nUpdating the segment list to use core-south:\n";
     const auto backup = simulateSrv6Forwarding(
-        network, "edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42"), south_policy);
+        network, "edge-west", "client-a", Ipv4Address::parse("10.20.0.42"), south_policy);
     printSrv6Result(output, backup);
 }
 
@@ -163,12 +163,12 @@ void runAllScenarios(std::ostream& output) {
 void runMetricsServer(std::uint16_t port, std::ostream& output) {
     Network network = makeSampleNetwork();
     static_cast<void>(
-        network.forward("edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42")));
+        network.forward("edge-west", "client-a", Ipv4Address::parse("10.20.0.42")));
     network.setLinkState("edge-west", "core-north", false);
     static_cast<void>(
-        network.forward("edge-west", "tenant-acme", Ipv4Address::parse("10.20.0.42")));
+        network.forward("edge-west", "client-a", Ipv4Address::parse("10.20.0.42")));
     static_cast<void>(
-        network.forward("edge-west", "tenant-unknown", Ipv4Address::parse("10.20.0.42")));
+        network.forward("edge-west", "unknown-client", Ipv4Address::parse("10.20.0.42")));
 
     output << "Prometheus metrics endpoint listening on http://127.0.0.1:" << port
            << "/metrics\nPress Ctrl+C to stop.\n";
@@ -185,7 +185,7 @@ void printHelp(std::ostream& output) {
            << "  edgecontrol --scenario srv6\n"
            << "  edgecontrol --scenario serve [--metrics-port 9464]\n"
            << "  edgecontrol --help\n\n"
-           << "Scenarios model BGP-like routing, VPC tenant isolation, VXLAN VNIs, an SRv6\n"
+           << "Scenarios model BGP-like routing, client network isolation, VXLAN VNIs, an SRv6\n"
            << "segment-list policy, link failures, forwarding and Prometheus metrics.\n";
 }
 

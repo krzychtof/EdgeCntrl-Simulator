@@ -141,23 +141,23 @@ std::vector<std::string> shortestPath(const Network& network, const std::string&
 
 Srv6ForwardingResult simulateSrv6Forwarding(const Network& network,
                                             const std::string& source_router,
-                                            const std::string& tenant_id,
+                                            const std::string& client_id,
                                             Ipv4Address destination,
                                             const std::vector<Srv6Segment>& segments) {
     static_cast<void>(findRouter(network, source_router));
 
     Srv6ForwardingResult result;
-    result.tenant_id = tenant_id;
+    result.client_id = client_id;
     result.destination = destination.toString();
 
     const auto& subnets = network.vpcSubnets();
     const auto subnet = std::find_if(subnets.begin(), subnets.end(),
-                                     [&tenant_id, destination](const VpcSubnet& candidate) {
-                                         return candidate.tenant_id == tenant_id &&
+                                     [&client_id, destination](const VpcSubnet& candidate) {
+                                         return candidate.client_id == client_id &&
                                                 candidate.prefix.contains(destination);
                                      });
     if (subnet == subnets.end()) {
-        result.reason = "No matching destination subnet exists in tenant " + tenant_id + ".";
+        result.reason = "No matching destination subnet exists for client " + client_id + ".";
         return result;
     }
     if (segments.empty()) {
@@ -203,7 +203,7 @@ Srv6ForwardingResult simulateSrv6Forwarding(const Network& network,
     }
 
     result.delivered = true;
-    result.reason = "The final End.DX4 SID delivered the inner IPv4 packet to the tenant gateway.";
+    result.reason = "The final End.DX4 SID delivered the inner IPv4 packet to the client gateway.";
     return result;
 }
 

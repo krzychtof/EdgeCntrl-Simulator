@@ -38,13 +38,13 @@ topology:
         - configs/edge-east/frr.conf:/etc/frr/frr.conf
         - configs/edge-east/vtysh.conf:/etc/frr/vtysh.conf
 
-    tenant-west-host:
+    client-west-host:
       kind: linux
       image: alpine:3.21
       privileged: true
       cmd: sleep infinity
 
-    tenant-east-host:
+    client-east-host:
       kind: linux
       image: alpine:3.21
       privileged: true
@@ -55,5 +55,5 @@ topology:
     - endpoints: ["core-north:eth2", "edge-east:eth1"]
     - endpoints: ["edge-west:eth2", "core-south:eth1"]
     - endpoints: ["core-south:eth2", "edge-east:eth2"]
-    - endpoints: ["edge-west:eth3", "tenant-west-host:eth1"]
-    - endpoints: ["edge-east:eth3", "tenant-east-host:eth1"]
+    - endpoints: ["edge-west:eth3", "client-west-host:eth1"]
+    - endpoints: ["edge-east:eth3", "client-east-host:eth1"]

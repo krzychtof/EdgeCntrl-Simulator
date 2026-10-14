@@ -21,5 +21,5 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Build and tests passed. Starting the simulator...
-build\edgecontrol.exe --scenario all
+build\windows-mingw\edgecontrol.exe --scenario all
 exit /b %errorlevel%

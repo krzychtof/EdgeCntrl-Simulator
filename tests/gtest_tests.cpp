@@ -30,9 +30,9 @@ Network makeNetwork() {
     network.addLink("middle-a", "east", 2.0);
     network.addLink("west", "middle-b", 5.0);
     network.addLink("middle-b", "east", 1.0);
-    network.addVpcSubnet("acme", 5001U, Ipv4Prefix::parse("10.1.0.0/24"), "west");
-    network.addVpcSubnet("acme", 5001U, Ipv4Prefix::parse("10.2.0.0/24"), "east");
-    network.addVpcSubnet("other", 6001U, Ipv4Prefix::parse("10.2.0.0/24"), "east");
+    network.addVpcSubnet("client-a", 5001U, Ipv4Prefix::parse("10.1.0.0/24"), "west");
+    network.addVpcSubnet("client-a", 5001U, Ipv4Prefix::parse("10.2.0.0/24"), "east");
+    network.addVpcSubnet("client-b", 6001U, Ipv4Prefix::parse("10.2.0.0/24"), "east");
     return network;
 }
 
@@ -79,7 +79,7 @@ TEST(Ipv6AddressTest, RejectsMalformedAddress) {
                  std::invalid_argument);
 }
 
-TEST(NetworkTest, RejectsInvalidTopologyAndTenantConfiguration) {
+TEST(NetworkTest, RejectsInvalidTopologyAndClientConfiguration) {
     Network network;
     network.addRouter("r1", 64512U);
     network.addRouter("r2", 64513U);
@@ -92,12 +92,12 @@ TEST(NetworkTest, RejectsInvalidTopologyAndTenantConfiguration) {
     network.addLink("r1", "r2", 1.0);
     EXPECT_THROW(network.addLink("r2", "r1", 2.0), std::invalid_argument);
 
-    network.addVpcSubnet("acme", 5001U, Ipv4Prefix::parse("10.0.0.0/24"), "r1");
+    network.addVpcSubnet("client-a", 5001U, Ipv4Prefix::parse("10.0.0.0/24"), "r1");
     EXPECT_THROW(network.addVpcSubnet(
-                     "acme", 5001U, Ipv4Prefix::parse("10.0.0.128/25"), "r2"),
+                     "client-a", 5001U, Ipv4Prefix::parse("10.0.0.128/25"), "r2"),
                  std::invalid_argument);
     EXPECT_THROW(network.addVpcSubnet(
-                     "acme", 5002U, Ipv4Prefix::parse("10.0.1.0/24"), "r2"),
+                     "client-a", 5002U, Ipv4Prefix::parse("10.0.1.0/24"), "r2"),
                  std::invalid_argument);
 }
 
@@ -105,9 +105,9 @@ TEST(NetworkTest, UsesBackupRouteWhenPrimaryLinkFails) {
     auto network = makeNetwork();
     const auto destination = Ipv4Address::parse("10.2.0.42");
 
-    const auto primary = network.forward("west", "acme", destination);
+    const auto primary = network.forward("west", "client-a", destination);
     const auto* primary_route =
-        network.routeFor("west", "acme", Ipv4Prefix::parse("10.2.0.0/24"));
+        network.routeFor("west", "client-a", Ipv4Prefix::parse("10.2.0.0/24"));
     ASSERT_NE(primary_route, nullptr);
     EXPECT_EQ(primary_route->next_hop, "middle-a");
     EXPECT_EQ(primary_route->as_path.size(), 3U);
@@ -117,14 +117,14 @@ TEST(NetworkTest, UsesBackupRouteWhenPrimaryLinkFails) {
     EXPECT_DOUBLE_EQ(primary.path_latency_ms, 4.0);
 
     network.setLinkState("west", "middle-a", false);
-    const auto backup = network.forward("west", "acme", destination);
+    const auto backup = network.forward("west", "client-a", destination);
     ASSERT_TRUE(backup.delivered);
     ASSERT_EQ(backup.traversed_routers.size(), 3U);
     EXPECT_EQ(backup.traversed_routers[1], "middle-b");
     EXPECT_DOUBLE_EQ(backup.path_latency_ms, 6.0);
 
     const auto* backup_route =
-        network.routeFor("west", "acme", Ipv4Prefix::parse("10.2.0.0/24"));
+        network.routeFor("west", "client-a", Ipv4Prefix::parse("10.2.0.0/24"));
     ASSERT_NE(backup_route, nullptr);
     EXPECT_EQ(backup_route->next_hop, "middle-b");
 }
@@ -134,26 +134,27 @@ TEST(NetworkTest, WithdrawsRouteWhenAllPathsAreUnavailable) {
     network.setLinkState("west", "middle-a", false);
     network.setLinkState("west", "middle-b", false);
 
-    const auto result = network.forward("west", "acme", Ipv4Address::parse("10.2.0.42"));
+    const auto result =
+        network.forward("west", "client-a", Ipv4Address::parse("10.2.0.42"));
 
     EXPECT_FALSE(result.delivered);
     EXPECT_NE(result.reason.find("No usable route"), std::string::npos);
-    EXPECT_EQ(network.routeFor("west", "acme", Ipv4Prefix::parse("10.2.0.0/24")),
+    EXPECT_EQ(network.routeFor("west", "client-a", Ipv4Prefix::parse("10.2.0.0/24")),
               nullptr);
 }
 
-TEST(NetworkTest, KeepsTenantNetworksIsolated) {
+TEST(NetworkTest, KeepsClientNetworksIsolated) {
     auto network = makeNetwork();
     const auto destination = Ipv4Address::parse("10.2.0.42");
 
-    const auto acme = network.forward("west", "acme", destination);
-    const auto other = network.forward("west", "other", destination);
-    const auto unknown = network.forward("west", "unknown", destination);
+    const auto client_a = network.forward("west", "client-a", destination);
+    const auto client_b = network.forward("west", "client-b", destination);
+    const auto unknown = network.forward("west", "unknown-client", destination);
 
-    EXPECT_TRUE(acme.delivered);
-    EXPECT_EQ(acme.vni, 5001U);
-    EXPECT_TRUE(other.delivered);
-    EXPECT_EQ(other.vni, 6001U);
+    EXPECT_TRUE(client_a.delivered);
+    EXPECT_EQ(client_a.vni, 5001U);
+    EXPECT_TRUE(client_b.delivered);
+    EXPECT_EQ(client_b.vni, 6001U);
     EXPECT_FALSE(unknown.delivered);
     EXPECT_EQ(network.metrics().packets_dropped, 1U);
     EXPECT_EQ(network.metrics().packets_forwarded, 2U);
@@ -175,7 +176,7 @@ TEST(Srv6Test, ForwardsThroughConfiguredSegments) {
          Srv6Behavior::EndDx4}};
 
     const auto result = edgecontrol::simulateSrv6Forwarding(
-        network, "west", "acme", Ipv4Address::parse("10.2.0.42"), segments);
+        network, "west", "client-a", Ipv4Address::parse("10.2.0.42"), segments);
 
     ASSERT_TRUE(result.delivered) << result.reason;
     ASSERT_EQ(result.traversed_routers.size(), 3U);
@@ -195,13 +196,13 @@ TEST(Srv6Test, RejectsPolicyWhenItsSegmentRouterIsUnreachable) {
          Srv6Behavior::EndDx4}};
 
     const auto result = edgecontrol::simulateSrv6Forwarding(
-        network, "west", "acme", Ipv4Address::parse("10.2.0.42"), segments);
+        network, "west", "client-a", Ipv4Address::parse("10.2.0.42"), segments);
 
     EXPECT_FALSE(result.delivered);
     EXPECT_NE(result.reason.find("No active path"), std::string::npos);
 }
 
-TEST(Srv6Test, ChangesSegmentListAfterFailureAndKeepsTenantIsolation) {
+TEST(Srv6Test, ChangesSegmentListAfterFailureAndKeepsClientIsolation) {
     auto network = makeNetwork();
     const std::vector<Srv6Segment> north_policy{
         {edgecontrol::Ipv6Address::parse("2001:db8:1::1"), "middle-a",
@@ -215,7 +216,7 @@ TEST(Srv6Test, ChangesSegmentListAfterFailureAndKeepsTenantIsolation) {
          Srv6Behavior::EndDx4}};
 
     const auto first = edgecontrol::simulateSrv6Forwarding(
-        network, "west", "acme", Ipv4Address::parse("10.2.0.42"), north_policy);
+        network, "west", "client-a", Ipv4Address::parse("10.2.0.42"), north_policy);
     ASSERT_TRUE(first.delivered);
     ASSERT_EQ(first.executed_segments.size(), 2U);
     EXPECT_EQ(first.executed_segments.front().toString(), "2001:db8:1::1");
@@ -223,19 +224,19 @@ TEST(Srv6Test, ChangesSegmentListAfterFailureAndKeepsTenantIsolation) {
     network.setLinkState("west", "middle-a", false);
     network.setLinkState("middle-a", "east", false);
     const auto stale = edgecontrol::simulateSrv6Forwarding(
-        network, "west", "acme", Ipv4Address::parse("10.2.0.42"), north_policy);
+        network, "west", "client-a", Ipv4Address::parse("10.2.0.42"), north_policy);
     EXPECT_FALSE(stale.delivered);
     EXPECT_NE(stale.reason.find("No active path"), std::string::npos);
 
     const auto backup = edgecontrol::simulateSrv6Forwarding(
-        network, "west", "acme", Ipv4Address::parse("10.2.0.42"), south_policy);
+        network, "west", "client-a", Ipv4Address::parse("10.2.0.42"), south_policy);
     ASSERT_TRUE(backup.delivered);
     ASSERT_GE(backup.traversed_routers.size(), 2U);
     EXPECT_EQ(backup.traversed_routers[1], "middle-b");
     EXPECT_DOUBLE_EQ(backup.path_latency_ms, 6.0);
 
     const auto isolated = edgecontrol::simulateSrv6Forwarding(
-        network, "west", "unknown", Ipv4Address::parse("10.2.0.42"), south_policy);
+        network, "west", "unknown-client", Ipv4Address::parse("10.2.0.42"), south_policy);
     EXPECT_FALSE(isolated.delivered);
     EXPECT_TRUE(isolated.executed_segments.empty());
 }
@@ -250,11 +251,11 @@ TEST(Srv6Test, RejectsInvalidFinalBehaviorAndGateway) {
          Srv6Behavior::EndDx4}};
 
     EXPECT_THROW(edgecontrol::simulateSrv6Forwarding(
-                     network, "west", "acme", Ipv4Address::parse("10.2.0.42"),
+                     network, "west", "client-a", Ipv4Address::parse("10.2.0.42"),
                      missing_final_behavior),
                  std::invalid_argument);
     EXPECT_THROW(edgecontrol::simulateSrv6Forwarding(
-                     network, "west", "acme", Ipv4Address::parse("10.2.0.42"),
+                     network, "west", "client-a", Ipv4Address::parse("10.2.0.42"),
                      wrong_gateway),
                  std::invalid_argument);
 }
@@ -275,9 +276,9 @@ TEST(ScenarioIntegrationTest, IsolationScenarioReportsDropAndDistinctVnis) {
     edgecontrol::runIsolationScenario(output);
     const auto text = output.str();
 
-    EXPECT_NE(text.find("tenant-acme -> 10.20.0.42 | VNI 5001"),
+    EXPECT_NE(text.find("client-a -> 10.20.0.42 | VNI 5001"),
               std::string::npos);
-    EXPECT_NE(text.find("tenant-unknown -> 10.20.0.42 | VNI 0"),
+    EXPECT_NE(text.find("unknown-client -> 10.20.0.42 | VNI 0"),
               std::string::npos);
     EXPECT_NE(text.find("[DROPPED]"), std::string::npos);
     EXPECT_NE(text.find("edgecontrol_packets_dropped 1"), std::string::npos);

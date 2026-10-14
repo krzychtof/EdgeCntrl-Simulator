@@ -61,11 +61,11 @@ docker exec "${prefix}edge-east" sh -ec '
     ip link set br-vpc up
 '
 
-docker exec "${prefix}tenant-west-host" sh -ec '
+docker exec "${prefix}client-west-host" sh -ec '
     ip link set eth1 up
     ip addr add 192.0.2.10/24 dev eth1
 '
-docker exec "${prefix}tenant-east-host" sh -ec '
+docker exec "${prefix}client-east-host" sh -ec '
     ip link set eth1 up
     ip addr add 192.0.2.20/24 dev eth1
 '
@@ -90,8 +90,8 @@ wait_for_next_hop() {
 echo "Checking preferred BGP underlay route via core-north..."
 wait_for_next_hop 10.0.12.2
 
-echo "Checking tenant host-to-host traffic across the VXLAN overlay..."
-docker exec "${prefix}tenant-west-host" ping -c 3 -W 3 192.0.2.20
+echo "Checking client host-to-host traffic across the VXLAN overlay..."
+docker exec "${prefix}client-west-host" ping -c 3 -W 3 192.0.2.20
 
 echo "Checking route failover and tunnel recovery..."
 restore_primary_link() {
@@ -106,12 +106,12 @@ docker exec "${prefix}edge-west" ip link set eth1 down
 sleep 5
 echo "Waiting for BGP failover via core-south..."
 wait_for_next_hop 10.0.13.2
-docker exec "${prefix}tenant-west-host" ping -c 3 -W 3 192.0.2.20
+docker exec "${prefix}client-west-host" ping -c 3 -W 3 192.0.2.20
 
 restore_primary_link
 echo "Checking BGP failback and VXLAN recovery via core-north..."
 wait_for_next_hop 10.0.12.2
-docker exec "${prefix}tenant-west-host" ping -c 3 -W 3 192.0.2.20
+docker exec "${prefix}client-west-host" ping -c 3 -W 3 192.0.2.20
 trap - EXIT
 
 echo "Real FRR/BGP/VXLAN failover and recovery passed. Lab containers remain running."

@@ -24,14 +24,14 @@ struct Link {
 };
 
 struct VpcSubnet {
-    std::string tenant_id;
+    std::string client_id;
     std::uint32_t vni;
     Ipv4Prefix prefix;
     std::string gateway_router;
 };
 
 struct Route {
-    std::string tenant_id;
+    std::string client_id;
     Ipv4Prefix prefix;
     std::string origin_router;
     std::string next_hop;
@@ -44,7 +44,7 @@ struct Route {
 struct ForwardingResult {
     bool delivered{};
     std::string reason;
-    std::string tenant_id;
+    std::string client_id;
     std::string destination;
     std::uint32_t vni{};
     double path_latency_ms{};
@@ -62,7 +62,7 @@ class Network {
 public:
     void addRouter(std::string id, std::uint32_t autonomous_system);
     void addLink(std::string first_router, std::string second_router, double latency_ms);
-    void addVpcSubnet(std::string tenant_id, std::uint32_t vni, Ipv4Prefix prefix,
+    void addVpcSubnet(std::string client_id, std::uint32_t vni, Ipv4Prefix prefix,
                       std::string gateway_router);
     void setLinkState(const std::string& first_router, const std::string& second_router,
                       bool active);
@@ -72,19 +72,19 @@ public:
     [[nodiscard]] const std::vector<VpcSubnet>& vpcSubnets() const noexcept;
     [[nodiscard]] const Metrics& metrics() const noexcept;
     [[nodiscard]] const Route* routeFor(const std::string& router_id,
-                                        const std::string& tenant_id,
+                                        const std::string& client_id,
                                         const Ipv4Prefix& prefix) const;
     [[nodiscard]] ForwardingResult forward(const std::string& source_router,
-                                           const std::string& tenant_id,
+                                           const std::string& client_id,
                                            Ipv4Address destination);
     [[nodiscard]] std::string prometheusMetrics() const;
 
 private:
     using RouteTable = std::unordered_map<std::string, Route>;
-    using TenantRouteTables = std::unordered_map<std::string, RouteTable>;
+    using ClientRouteTables = std::unordered_map<std::string, RouteTable>;
 
     [[nodiscard]] const Router& findRouter(const std::string& id) const;
-    [[nodiscard]] const VpcSubnet* findSubnet(const std::string& tenant_id,
+    [[nodiscard]] const VpcSubnet* findSubnet(const std::string& client_id,
                                                Ipv4Address address) const noexcept;
     [[nodiscard]] const Link* findLink(const std::string& first_router,
                                        const std::string& second_router) const noexcept;
@@ -93,7 +93,7 @@ private:
     std::vector<Router> routers_;
     std::vector<Link> links_;
     std::vector<VpcSubnet> vpc_subnets_;
-    TenantRouteTables route_tables_;
+    ClientRouteTables route_tables_;
     Metrics metrics_;
 };
 

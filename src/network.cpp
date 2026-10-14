@@ -10,8 +10,8 @@
 namespace edgecontrol {
 namespace {
 
-std::string routeKey(const std::string& tenant_id, const Ipv4Prefix& prefix) {
-    return tenant_id + "|" + prefix.toString();
+std::string routeKey(const std::string& client_id, const Ipv4Prefix& prefix) {
+    return client_id + "|" + prefix.toString();
 }
 
 bool isPreferred(const Route& candidate, const Route& current) {
@@ -28,7 +28,7 @@ bool isPreferred(const Route& candidate, const Route& current) {
 }
 
 bool sameRoute(const Route& lhs, const Route& rhs) {
-    return lhs.tenant_id == rhs.tenant_id && lhs.prefix == rhs.prefix &&
+    return lhs.client_id == rhs.client_id && lhs.prefix == rhs.prefix &&
            lhs.origin_router == rhs.origin_router && lhs.next_hop == rhs.next_hop &&
            lhs.as_path == rhs.as_path && lhs.local_preference == rhs.local_preference &&
            lhs.total_latency_ms == rhs.total_latency_ms && lhs.vni == rhs.vni;
@@ -71,26 +71,26 @@ void Network::addLink(std::string first_router, std::string second_router, doubl
     recomputeRoutes();
 }
 
-void Network::addVpcSubnet(std::string tenant_id, std::uint32_t vni, Ipv4Prefix prefix,
+void Network::addVpcSubnet(std::string client_id, std::uint32_t vni, Ipv4Prefix prefix,
                            std::string gateway_router) {
-    if (tenant_id.empty() || vni == 0U || vni > 16777215U) {
-        throw std::invalid_argument("Tenant ID must be set and VNI must be in range 1..16777215.");
+    if (client_id.empty() || vni == 0U || vni > 16777215U) {
+        throw std::invalid_argument("Client ID must be set and VNI must be in range 1..16777215.");
     }
     static_cast<void>(findRouter(gateway_router));
 
     for (const auto& subnet : vpc_subnets_) {
-        if (subnet.tenant_id != tenant_id) {
+        if (subnet.client_id != client_id) {
             continue;
         }
         if (subnet.vni != vni) {
-            throw std::invalid_argument("All subnets belonging to one tenant must use one VNI.");
+            throw std::invalid_argument("All subnets belonging to one client must use one VNI.");
         }
         if (subnet.prefix.overlaps(prefix)) {
-            throw std::invalid_argument("Overlapping subnets are not allowed within one tenant.");
+            throw std::invalid_argument("Overlapping subnets are not allowed within one client.");
         }
     }
 
-    vpc_subnets_.push_back({std::move(tenant_id), vni, prefix, std::move(gateway_router)});
+    vpc_subnets_.push_back({std::move(client_id), vni, prefix, std::move(gateway_router)});
     recomputeRoutes();
 }
 
@@ -125,26 +125,26 @@ const Metrics& Network::metrics() const noexcept {
     return metrics_;
 }
 
-const Route* Network::routeFor(const std::string& router_id, const std::string& tenant_id,
+const Route* Network::routeFor(const std::string& router_id, const std::string& client_id,
                                const Ipv4Prefix& prefix) const {
     const auto router = route_tables_.find(router_id);
     if (router == route_tables_.end()) {
         return nullptr;
     }
-    const auto route = router->second.find(routeKey(tenant_id, prefix));
+    const auto route = router->second.find(routeKey(client_id, prefix));
     return route == router->second.end() ? nullptr : &route->second;
 }
 
-ForwardingResult Network::forward(const std::string& source_router, const std::string& tenant_id,
+ForwardingResult Network::forward(const std::string& source_router, const std::string& client_id,
                                   Ipv4Address destination) {
     static_cast<void>(findRouter(source_router));
     ForwardingResult result;
-    result.tenant_id = tenant_id;
+    result.client_id = client_id;
     result.destination = destination.toString();
 
-    const VpcSubnet* subnet = findSubnet(tenant_id, destination);
+    const VpcSubnet* subnet = findSubnet(client_id, destination);
     if (subnet == nullptr) {
-        result.reason = "No matching destination subnet exists in tenant " + tenant_id + ".";
+        result.reason = "No matching destination subnet exists for client " + client_id + ".";
         ++metrics_.packets_dropped;
         return result;
     }
@@ -160,7 +160,7 @@ ForwardingResult Network::forward(const std::string& source_router, const std::s
             return result;
         }
 
-        const Route* route = routeFor(current_router, tenant_id, subnet->prefix);
+        const Route* route = routeFor(current_router, client_id, subnet->prefix);
         if (route == nullptr || route->next_hop.empty()) {
             result.reason = "No usable route to " + subnet->prefix.toString() + " from " +
                             current_router + ".";
@@ -215,11 +215,11 @@ const Router& Network::findRouter(const std::string& id) const {
     return *router;
 }
 
-const VpcSubnet* Network::findSubnet(const std::string& tenant_id,
+const VpcSubnet* Network::findSubnet(const std::string& client_id,
                                      Ipv4Address address) const noexcept {
     const auto subnet = std::find_if(vpc_subnets_.begin(), vpc_subnets_.end(),
-                                     [&tenant_id, address](const VpcSubnet& candidate) {
-                                         return candidate.tenant_id == tenant_id &&
+                                     [&client_id, address](const VpcSubnet& candidate) {
+                                         return candidate.client_id == client_id &&
                                                 candidate.prefix.contains(address);
                                      });
     return subnet == vpc_subnets_.end() ? nullptr : &*subnet;
@@ -239,19 +239,19 @@ const Link* Network::findLink(const std::string& first_router,
 
 void Network::recomputeRoutes() {
     const auto previous_tables = route_tables_;
-    TenantRouteTables converged;
+    ClientRouteTables converged;
 
     for (const auto& subnet : vpc_subnets_) {
         const Router& gateway = findRouter(subnet.gateway_router);
-        Route local{subnet.tenant_id, subnet.prefix, subnet.gateway_router, "",
+        Route local{subnet.client_id, subnet.prefix, subnet.gateway_router, "",
                     {gateway.autonomous_system}, 200U, 0.0, subnet.vni};
         converged[subnet.gateway_router].insert_or_assign(
-            routeKey(subnet.tenant_id, subnet.prefix), std::move(local));
+            routeKey(subnet.client_id, subnet.prefix), std::move(local));
     }
 
-    TenantRouteTables current = converged;
+    ClientRouteTables current = converged;
     for (std::size_t iteration = 0; iteration < routers_.size(); ++iteration) {
-        TenantRouteTables next = converged;
+        ClientRouteTables next = converged;
         for (const auto& link : links_) {
             if (!link.active) {
                 continue;

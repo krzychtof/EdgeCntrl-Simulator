@@ -22,7 +22,7 @@ struct Srv6Segment {
 struct Srv6ForwardingResult {
     bool delivered{};
     std::string reason;
-    std::string tenant_id;
+    std::string client_id;
     std::string destination;
     std::vector<std::string> traversed_routers;
     std::vector<Ipv6Address> executed_segments;
@@ -30,7 +30,7 @@ struct Srv6ForwardingResult {
 };
 
 [[nodiscard]] Srv6ForwardingResult simulateSrv6Forwarding(
-    const Network& network, const std::string& source_router, const std::string& tenant_id,
+    const Network& network, const std::string& source_router, const std::string& client_id,
     Ipv4Address destination, const std::vector<Srv6Segment>& segments);
 
 } // namespace edgecontrol
