@@ -4,6 +4,21 @@
 
 EdgeCntrl Simulator is a modern C++ networking project that demonstrates how cloud networks can route traffic, recover from link failures, and keep customer networks separate.
 
+### Network layer: mainly Layer 3 (L3)
+
+The main focus is **Layer 3 of the OSI model**: IP addresses, routing between networks, and choosing another path when a link fails. The Linux lab uses eBGP to exchange these IP routes. VXLAN adds a Layer 2 client network on top of the Layer 3 underlay; the SRv6 example also models Layer 3 forwarding.
+
+```text
+          What the project demonstrates
++-------------------------------------------+
+| Layer 2: client network carried by VXLAN  |  overlay
++-------------------------------------------+
+| Layer 3: IP routes, eBGP, path failover   |  main focus
++-------------------------------------------+
+| Linux virtual links and containers        |  lab setup
++-------------------------------------------+
+```
+
 The project has two parts. One is a small model that is easy to run repeatedly. The other is a hands-on lab that uses real Linux networking tools.
 
 ### 1. C++ simulator: understand the decisions
